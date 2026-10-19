@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learning Tracker</title>
+<style>
+:root{--bg:#000;--card:#121212;--tx:#eee;--mut:#9a9a94;--ac:#6c9bff;--ok:#4cc27f;--bd:#2a2a2a;color-scheme:dark}
+
+
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;gap:8px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+h1{font-size:18px;margin:0;flex:1;min-width:140px}
+.btn,button{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer;display:inline-block}
+.sm{padding:4px 10px;font-size:13px}.gray{background:var(--mut)}
+#warn{background:#fff3cd;color:#664d03;padding:10px 20px;font-size:14px}
+main{display:grid;grid-template-columns:270px 1fr;gap:16px;padding:16px 20px}
+@media(max-width:760px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:12px}
+.topic{padding:10px;border-radius:8px;cursor:pointer}
+.topic.sel{background:var(--bg)}
+.topic b{display:flex;justify-content:space-between;gap:8px}
+.sub{display:flex;justify-content:space-between;padding:3px 0 0 14px;font-size:13px;color:var(--mut)}
+.sub:hover{color:var(--ac)}
+.bar{height:5px;background:var(--bd);border-radius:3px;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok)}
+.head{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;gap:8px;flex-wrap:wrap}
+.head h2,.head h3{margin:0}.head h2{font-size:20px}.head h3{font-size:16px}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.item{display:flex;gap:10px;align-items:center;padding:8px 10px;border-top:1px solid var(--bd)}
+.item span{flex:1;cursor:pointer;word-break:break-all}
+.item span:hover{color:var(--ac)}
+.item.done span{color:var(--mut);text-decoration:line-through}
+.th{width:128px;height:72px;flex:none;background:var(--bd);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;font-size:24px}
+.th img{width:100%;height:100%;object-fit:cover}.th small{font-size:11px;color:var(--mut)}
+.item.done .th{opacity:.5}
+.x{background:none;color:var(--mut);padding:4px 8px}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok);flex:none}
+video,iframe,audio{width:100%;border-radius:10px;margin-bottom:10px;background:#000}
+iframe{height:70vh;background:#fff}
+.mut{color:var(--mut)}.empty{padding:10px}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.mbox{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:12px;padding:18px;width:min(460px,100%)}
+.mbox h3{margin:0 0 10px}.mbox p{margin:0 0 12px}
+.mi,.mt{width:100%;padding:8px 10px;font:inherit;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx)}
+.mt{height:160px;font:12px monospace;resize:vertical}
+.mb{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.sh{cursor:pointer;user-select:none}.ib{background:none;color:var(--mut);padding:0 4px;font-size:13px;border-radius:4px}.ib:hover{color:var(--ac)}.chev{display:inline-block;width:1.2em;color:var(--mut);transition:transform .15s}.closed .chev{transform:rotate(-90deg)}
+</style>
+</head>
+<body>
+<div id="warn" hidden>⚠️ Your browser is blocking saved data for this page, so your checklist may not be remembered. Use Backup to copy it somewhere safe.</div>
+<header>
+  <h1>📚 Learning Tracker</h1>
+  <span class="mut" id="total"></span>
+  <button id="newh">+ New heading</button>
+  <label class="btn">Load folder<input type="file" id="folder" webkitdirectory multiple hidden></label>
+  
+  <button class="gray" id="bk">Backup</button>
+  <button class="gray" id="rs">Restore</button>
+  <input type="file" id="filesIn" multiple hidden>
+</header>
+<main>
+  <div class="card" id="topics"></div>
+  <div>
+    <div id="player"></div>
+    <div id="items"></div>
+  </div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+function modal(build){return new Promise(res=>{
+  const ov=document.createElement('div');ov.className='ov';
+  const bx=document.createElement('div');bx.className='mbox';ov.appendChild(bx);
+  const close=v=>{ov.remove();res(v)};
+  build(bx,close);document.body.appendChild(ov);
+  ov.addEventListener('mousedown',e=>{if(e.target===ov)close(null)});
+})}
+const ask=(title,def='')=>modal((bx,close)=>{
+  bx.innerHTML=`<h3>${esc(title)}</h3><input class="mi" value="${esc(def)}"><div class="mb"><button class="gray" id="mc">Cancel</button><button id="mo">OK</button></div>`;
+  const i=bx.querySelector('.mi');setTimeout(()=>{i.focus();i.select()},0);
+  bx.querySelector('#mo').onclick=()=>close(i.value);
+  bx.querySelector('#mc').onclick=()=>close(null);
+  i.onkeydown=e=>{if(e.key==='Enter')close(i.value);if(e.key==='Escape')close(null)};
+});
+const yes=msg=>modal((bx,close)=>{
+  bx.innerHTML=`<p>${esc(msg)}</p><div class="mb"><button class="gray" id="mc">Cancel</button><button id="mo">OK</button></div>`;
+  bx.querySelector('#mo').onclick=()=>close(true);bx.querySelector('#mc').onclick=()=>close(null);
+}).then(v=>v===true);
+const tell=msg=>modal((bx,close)=>{
+  bx.innerHTML=`<p>${esc(msg)}</p><div class="mb"><button id="mo">OK</button></div>`;
+  bx.querySelector('#mo').onclick=()=>close(null);
+});
+const choose=(msg,labels)=>modal((bx,close)=>{
+  bx.innerHTML=`<p>${esc(msg)}</p><div class="mb">${labels.map((l,i)=>`<button data-c="${i}">${esc(l)}</button>`).join('')}<button class="gray" id="mc">Cancel</button></div>`;
+  bx.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>close(+b.dataset.c));
+  bx.querySelector('#mc').onclick=()=>close(null);
+});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ld=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
+const clean=s=>(s||'').replace(/\//g,'-').trim();
+const K=(h,s,p)=>h+'/'+s+'/'+p;
+const col=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
+const VID=['mp4','webm','mkv','mov','m4v'],IMG=['png','jpg','jpeg','gif','webp'],AUD=['mp3','m4a','wav','ogg'];
+const ext=p=>p.split('.').pop().toLowerCase();
+
+// Saved: checklist only = {heading:{subheading:[file names]}} + ticks. Files & thumbnails stay in memory.
+let list=ld('lt2:list',null),done=ld('lt2:done',{}),files={},thumbs={},titles=ld('lt2:titles',{}),cur=null,pending=null;
+if(!list){ // migrate from older version
+  const ol=ld('lt:list',{}),od=ld('lt:done',{});list={};done={};
+  for(const t in ol)list[t]={General:ol[t]};
+  for(const key in od){const i=key.indexOf('/');done[key.slice(0,i)+'/General/'+key.slice(i+1)]=1}
+}
+function save(){try{localStorage.setItem('lt2:list',JSON.stringify(list));localStorage.setItem('lt2:done',JSON.stringify(done));localStorage.setItem('lt2:titles',JSON.stringify(titles))}catch(e){$('#warn').hidden=false}}
+
+function ensure(h,s){list[h]=list[h]||{};if(s)list[h][s]=list[h][s]||[]}
+const srt=(h,s)=>list[h][s].sort((x,y)=>col.compare(titles[K(h,s,x)]||x,titles[K(h,s,y)]||y));
+function addFiles(arr){
+  for(const{h,s,path,file}of arr){ensure(h,s);const l=list[h][s];if(!l.includes(path))l.push(path);files[K(h,s,path)]=file}
+  for(const h in list)for(const s in list[h])srt(h,s);
+  if(!cur||!list[cur])cur=Object.keys(list)[0];
+  save();render();
+}
+function remap(a,b){
+  for(const o of [done,files,thumbs,titles])for(const key of Object.keys(o))if(key.startsWith(a)){o[b+key.slice(a.length)]=o[key];delete o[key]}
+}
+function dropKeys(prefix){for(const o of [done,files,thumbs,titles])for(const key of Object.keys(o))if(key.startsWith(prefix))delete o[key]}
+
+// ---- loading a folder
+$('#folder').onchange=async e=>{
+  const fs=[...e.target.files].filter(f=>!f.name.startsWith('.'));
+  if(!fs.length)return;
+  if(!fs[0].webkitRelativePath){const h0=cur||'General';addFiles(fs.map(f=>({h:h0,s:'General',path:f.name,file:f})));e.target.value='';return}
+  const root=fs[0].webkitRelativePath.split('/')[0];
+  const rel=fs.map(f=>f.webkitRelativePath.split('/').slice(1));
+  const maxd=rel.reduce((m,p)=>Math.max(m,p.length),0);
+  let mode=maxd>=3?'all':maxd===1?'flat':null;
+  if(!mode){const c=await choose('Is “'+root+'” ONE heading (its sub-folders are sub-headings), or a folder of headings (its sub-folders are headings)?',['“'+root+'” is one heading','Its sub-folders are headings']);
+    if(c===null){e.target.value='';return}mode=c===0?'one':'all'}
+  addFiles(fs.map((f,i)=>{const p=rel[i];let h,s,path;
+    if(mode==='flat'){h=root;s='General';path=p[0]}
+    else if(mode==='one'){h=root;if(p.length>1){s=p[0];path=p.slice(1).join('/')}else{s='General';path=p[0]}}
+    else if(p.length>=3){h=p[0];s=p[1];path=p.slice(2).join('/')}
+    else if(p.length===2){h=p[0];s='General';path=p[1]}
+    else{h='General';s='General';path=p[0]}
+    return{h,s,path,file:f}}));
+  e.target.value='';
+};
+$('#filesIn').onchange=async e=>{
+  const fl=[...e.target.files];if(pending&&fl.length){const{h,s}=pending;addFiles(fl.map(f=>({h,s,path:f.name,file:f})));if(fl.length===1){const key=K(h,s,fl[0].name);const n=await ask('Give this video a name (optional, e.g. 1. Hooks)',titles[key]||'');if(n&&n.trim()){titles[key]=n.trim();srt(h,s);save();render()}}}
+  e.target.value='';
+};
+
+// ---- backup / restore (copy & paste; works everywhere)
+$('#bk').onclick=()=>modal((bx,close)=>{
+  const txt=JSON.stringify({list,done,titles});
+  bx.innerHTML=`<h3>Backup</h3><p class="mut">Copy this text and keep it somewhere safe (a note or file). Paste it into “Restore” to get your checklist back.</p><textarea class="mt" readonly></textarea><div class="mb"><button id="mcp">Copy</button><button class="gray" id="mc">Close</button></div>`;
+  const ta=bx.querySelector('textarea');ta.value=txt;
+  bx.querySelector('#mc').onclick=()=>close(null);
+  bx.querySelector('#mcp').onclick=async()=>{
+    ta.select();let ok=false;
+    try{await navigator.clipboard.writeText(txt);ok=true}catch(e){try{ok=document.execCommand('copy')}catch(x){}}
+    bx.querySelector('#mcp').textContent=ok?'Copied ✓':'Press Ctrl+C to copy';
+  };
+});
+$('#rs').onclick=()=>modal((bx,close)=>{
+  bx.innerHTML=`<h3>Restore</h3><p class="mut">Paste your backup text below. This replaces the current checklist.</p><textarea class="mt"></textarea><div class="mb"><button class="gray" id="mc">Cancel</button><button id="mo">Restore</button></div>`;
+  bx.querySelector('#mc').onclick=()=>close(null);
+  bx.querySelector('#mo').onclick=()=>{
+    try{const o=JSON.parse(bx.querySelector('textarea').value);if(!o.list)throw 0;
+      list=o.list;done=o.done||{};titles=o.titles||{};cur=Object.keys(list)[0];save();render();close(1)}
+    catch(x){bx.querySelector('p').textContent='That text is not a valid backup. Paste the full text and try again.'}
+  };
+});
+
+// ---- thumbnails (memory only, one at a time)
+let q=Promise.resolve();
+const enqueue=fn=>{q=q.then(fn).catch(()=>{})};
+function vidThumb(file){return new Promise(res=>{
+  const v=document.createElement('video');v.muted=true;v.preload='metadata';
+  const u=URL.createObjectURL(file);v.src=u;
+  const end=r=>{URL.revokeObjectURL(u);res(r)};
+  const t=setTimeout(()=>end(null),8000);
+  v.onloadeddata=()=>{v.currentTime=Math.min(5,(v.duration||2)/2)};
+  v.onseeked=()=>{clearTimeout(t);const c=document.createElement('canvas');c.width=256;c.height=144;
+    try{c.getContext('2d').drawImage(v,0,0,256,144);end(c.toDataURL('image/jpeg',.7))}catch(e){end(null)}};
+  v.onerror=()=>{clearTimeout(t);end(null)};
+})}
+function paint(key,src,e){document.querySelectorAll('.th').forEach(el=>{if(el.dataset.k===key)el.innerHTML=src?`<img src="${src}">`:e})}
+function loadThumb(key,p,f){
+  const x=ext(p);
+  if(thumbs[key]!==undefined)return paint(key,thumbs[key],'🎬');
+  if(IMG.includes(x)){thumbs[key]=URL.createObjectURL(f);paint(key,thumbs[key],'🖼️')}
+  else if(VID.includes(x))enqueue(async()=>{thumbs[key]=await vidThumb(f);paint(key,thumbs[key],'🎬')});
+  else paint(key,null,AUD.includes(x)?'🎧':'📄');
+}
+
+// ---- rendering
+const count=(h,s)=>{const l=list[h][s];return{n:l.filter(p=>done[K(h,s,p)]).length,t:l.length}};
+const total=h=>Object.keys(list[h]).reduce((a,s)=>{const c=count(h,s);return{n:a.n+c.n,t:a.t+c.t}},{n:0,t:0});
+function render(){
+  const hs=Object.keys(list);let all=0,dn=0;
+  $('#topics').innerHTML=hs.map((h,i)=>{
+    const c=total(h);all+=c.t;dn+=c.n;
+    const subs=h===cur?Object.keys(list[h]).map((s,j)=>{const x=count(h,s);
+      return `<div class="sub" data-act="goto" data-s="${j}"><span>${x.t&&x.n===x.t?'✅ ':''}${esc(s)}</span><span>${x.n}/${x.t} <button class="ib" data-act="rens" data-s="${j}" title="Rename sub-heading">✎</button><button class="ib" data-act="dels" data-s="${j}" title="Delete sub-heading">🗑</button></span></div>`}).join(''):'';
+    return `<div class="topic ${h===cur?'sel':''}" data-act="pick" data-h="${i}">
+      <b><span>${c.t&&c.n===c.t?'✅ ':''}${esc(h)}</span><span class="mut">${c.n}/${c.t} <button class="ib" data-act="renh" data-h="${i}" title="Rename heading">✎</button><button class="ib" data-act="delh" data-h="${i}" title="Delete heading">🗑</button></span></b>
+      <div class="bar"><i style="width:${c.t?c.n/c.t*100:0}%"></i></div>${subs}</div>`}).join('')
+    ||'<p class="mut empty">Click “+ New heading” (e.g. React), then add sub-headings inside it. Or use “Load folder” to import a folder structure.</p>';
+  $('#total').textContent=all?`${dn}/${all} completed`:'';
+  renderMain();
+}
+function renderMain(){
+  const box=$('#items'),h=cur;
+  if(!h||!list[h]){box.innerHTML='';return}
+  const c=total(h),subs=Object.keys(list[h]);
+  let html=`<div class="card"><div class="head"><h2>${c.t&&c.n===c.t?'✅ ':''}${esc(h)}</h2>
+    <div class="btns"><button class="sm" data-act="addsub">+ Sub-heading</button>
+    <button class="sm gray" data-act="renh">Rename</button><button class="sm gray" data-act="delh">Delete</button></div></div>
+    <div class="bar" style="margin:0 10px 8px"><i style="width:${c.t?c.n/c.t*100:0}%"></i></div></div>`;
+  if(!subs.length)html+='<div class="card empty mut">No sub-headings yet. Click “+ Sub-heading” to add one (e.g. Basics, Hooks, Projects).</div>';
+  html+=subs.map((s,j)=>{const x=count(h,s);
+    const cl=closed[h+'/'+s];return `<div class="card ${cl?'closed':''}" id="sub${j}"><div class="head"><h3 class="sh" data-act="tog" data-s="${j}"><span class="chev">▾</span>${x.t&&x.n===x.t?'✅ ':''}${esc(s)} <span class="mut">${x.n}/${x.t}</span></h3>
+    <div class="btns"><button class="sm" data-act="addf" data-s="${j}">+ Add files</button>
+    <button class="sm gray" data-act="rens" data-s="${j}">Rename</button><button class="sm gray" data-act="dels" data-s="${j}">Delete</button></div></div>`+
+    '<div class="body" '+(cl?'hidden':'')+'>'+(list[h][s].map((p,i)=>{const key=K(h,s,p),d=done[key],f=files[key];
+      return `<div class="item ${d?'done':''}"><input type="checkbox" data-act="chk" data-s="${j}" data-i="${i}" ${d?'checked':''}>
+      <div class="th" data-act="open" data-s="${j}" data-i="${i}" data-k="${esc(key)}">${f?'':'<small>not loaded</small>'}</div>
+      <span data-act="open" data-s="${j}" data-i="${i}">${esc(titles[key]||p)}${titles[key]?`<br><small class="mut">${esc(p)}</small>`:''}</span><button class="x" data-act="rent" data-s="${j}" data-i="${i}" title="Give this video a name">✎</button>
+      <button class="x" data-act="rm" data-s="${j}" data-i="${i}" title="Remove">✕</button></div>`}).join('')
+      ||'<div class="empty mut">Empty. Use “+ Add files”.</div>')+'</div></div>'}).join('');
+  box.innerHTML=html;
+  subs.forEach(s=>list[h][s].forEach(p=>{const f=files[K(h,s,p)];if(f)loadThumb(K(h,s,p),p,f)}));
+}
+
+// ---- actions (one handler for the whole page)
+async function act(e){
+  const el=e.target.closest('[data-act]');if(!el)return;
+  const a=el.dataset.act,hs=Object.keys(list);if(el.dataset.h!==undefined&&a!=='pick'&&hs[el.dataset.h])cur=hs[el.dataset.h];const h=cur,subs=h&&list[h]?Object.keys(list[h]):[],s=subs[el.dataset.s],i=+el.dataset.i;
+  if(a==='pick'){cur=hs[el.dataset.h];render();return}
+  if(a==='tog'){const kk=h+'/'+s;if(closed[kk])delete closed[kk];else closed[kk]=1;saveClosed();render();return}
+  if(a==='colall'){subs.forEach(x=>closed[h+'/'+x]=1);saveClosed();render();return}
+  if(a==='expall'){subs.forEach(x=>delete closed[h+'/'+x]);saveClosed();render();return}
+  if(a==='goto'){const kk=h+'/'+s;if(closed[kk]){delete closed[kk];saveClosed();render()}const d=document.getElementById('sub'+el.dataset.s);if(d)d.scrollIntoView({behavior:'smooth'});return}
+  if(a==='chk'){const key=K(h,s,list[h][s][i]);el.checked?done[key]=1:delete done[key];save();render();return}
+  if(a==='open'){openFile(h,s,i);return}
+  if(a==='rent'){const key=K(h,s,list[h][s][i]);const n=await ask('Name for this video (e.g. 1. Hooks)',titles[key]||'');if(n===null)return;const t=n.trim();if(t)titles[key]=t;else delete titles[key];srt(h,s);save();render();return}
+  if(a==='rm'){const p=list[h][s][i];list[h][s].splice(i,1);dropKeys(K(h,s,p));save();render();return}
+  if(a==='addf'){pending={h,s};$('#filesIn').click();return}
+  if(a==='addsub'){const n=clean(await ask('Sub-heading name (e.g. Basics, Hooks, Projects)'));if(!n)return;
+    ensure(h,n);save();render();pending={h,s:n};$('#filesIn').click();return}
+  if(a==='renh'){const n=clean(await ask('Rename heading',h));if(!n||n===h)return;
+    if(list[n])return tell('That heading already exists.');
+    const o={};for(const k in list)o[k===h?n:k]=list[k];list=o;remap(h+'/',n+'/');cur=n;save();render();return}
+  if(a==='rens'){const n=clean(await ask('Rename sub-heading',s));if(!n||n===s)return;
+    if(list[h][n])return tell('That sub-heading already exists.');
+    const o={};for(const k in list[h])o[k===s?n:k]=list[h][k];list[h]=o;remap(h+'/'+s+'/',h+'/'+n+'/');save();render();return}
+  if(a==='delh'){if(!await yes('Delete “'+h+'” with all its sub-headings and ticks?'))return;
+    dropKeys(h+'/');delete list[h];cur=Object.keys(list)[0];save();render();return}
+  if(a==='dels'){if(!await yes('Delete sub-heading “'+s+'” and its ticks?'))return;
+    dropKeys(h+'/'+s+'/');delete list[h][s];save();render()}
+}
+$('#topics').onclick=act;$('#items').onclick=act;
+$('#newh').onclick=async()=>{
+  const n=clean(await ask('Heading name (e.g. React, ExpressJS, Mongoose, DevOps)'));
+  if(!n)return;ensure(n);cur=n;save();render();
+};
+function openFile(h,s,i){
+  const p=list[h][s][i],f=files[K(h,s,p)];
+  if(!f){tell('This file is not loaded. Click “Load folder” (or “+ Add files”) to load it for this session. Your ticks are already saved.');return}
+  const url=URL.createObjectURL(f),x=ext(p),box=$('#player');
+  if(VID.includes(x)){box.innerHTML=`<video controls autoplay src="${url}"></video>`;
+    box.firstChild.onended=()=>{done[K(h,s,p)]=1;save();render()}}
+  else if(AUD.includes(x))box.innerHTML=`<audio controls autoplay src="${url}"></audio>`;
+  else if(x==='pdf')box.innerHTML=`<iframe src="${url}"></iframe>`;
+  else if(IMG.includes(x))box.innerHTML=`<img src="${url}" style="max-width:100%;border-radius:10px;margin-bottom:10px">`;
+  else tell('This file type can’t be previewed in the page.')
+  box.scrollIntoView({behavior:'smooth'});
+}
+let closed=ld('lt2:closed',{});
+const saveClosed=()=>{try{localStorage.setItem('lt2:closed',JSON.stringify(closed))}catch(e){}};
+
+
+
+
+cur=Object.keys(list)[0]||null;save();render();
+</script>
+</body>
+</html>
